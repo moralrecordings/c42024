@@ -356,3 +356,154 @@ def autoplay():
 
 
 
+COCKTROMINOS = [
+    " X "
+    " X "
+    "X X",
+
+    "  X"
+    "XX "
+    " X ",
+
+    "X  "
+    " XX"
+    "X  ",
+    
+    " X "
+    "XX "
+    "  X",
+
+    "X X"
+    " X "
+    " X ",
+
+    " X "
+    " XX"
+    "X  ",
+
+    "  X"
+    "XX "
+    "  X",
+
+    "X  "
+    " XX"
+    " X ",
+]
+
+
+def cocktromino_scores(game_data: C4GameData, player: int, x: int, y: int) -> list[int]:
+    results = []
+    for cock in COCKTROMINOS:
+        score = 0
+        for i, c in enumerate(cock):
+            yy = (i // 3)
+            xx = (i % 3)
+            match =game_data.grid[(y + yy)*game_data.columns+(x + xx)] 
+            if c == " " and match == player:
+                score = -1
+                break
+            if c == "X":
+                if match == 0:
+                    continue
+                elif match == player:
+                    score += 1
+                else:
+                    score = -1
+                    break
+        results.append(score)
+    return results
+
+
+def get_best_cock(game_data: C4GameData, player: int, opponent: int) -> tuple[int, str]:
+
+    SCORE_LOG = lambda i: math.exp(math.log(1000)/(6*i+1))
+    SCORE_BASIC = [round(SCORE_LOG(i/game_data.required_connections)) for i in reversed(range(game_data.required_connections))]
+    SCORE_PLAYER_MAP = SCORE_BASIC + [100000]
+    SCORE_OPPONENT_MAP = SCORE_BASIC + [10000]
+
+    y_pos = get_y_pos(game_data)
+    scores = [0]*len(y_pos)
+    # horizontal
+    for x, y in enumerate(y_pos):
+        if y == -1: # full column
+            continue
+
+        h_span = get_span(game_data, player, x, y, 1, 0)
+        h_best = get_best_span(game_data, h_span, player)
+        v_span = get_span(game_data, player, x, y, 0, 1)
+        v_best = get_best_span(game_data, v_span, player)
+        br_span = get_span(game_data, player, x, y, 1, 1)
+        br_best = get_best_span(game_data, br_span, player)
+        ur_span = get_span(game_data, player, x, y, 1, -1)
+        ur_best = get_best_span(game_data, ur_span, player)
+        h_opp_span = get_span(game_data, opponent, x, y, 1, 0)
+        h_opp_best = get_best_span(game_data, h_opp_span, opponent)
+        v_opp_span = get_span(game_data, opponent, x, y, 0, 1)
+        v_opp_best = get_best_span(game_data, v_opp_span, opponent)
+        br_opp_span = get_span(game_data, opponent, x, y, 1, 1)
+        br_opp_best = get_best_span(game_data, br_opp_span, opponent)
+        ur_opp_span = get_span(game_data, opponent, x, y, 1, -1)
+        ur_opp_best = get_best_span(game_data, ur_opp_span, opponent)
+        
+        my_score = SCORE_PLAYER_MAP[h_best] + SCORE_PLAYER_MAP[v_best] + SCORE_PLAYER_MAP[br_best] + SCORE_PLAYER_MAP[ur_best]
+        opp_score = SCORE_OPPONENT_MAP[h_opp_best] + SCORE_OPPONENT_MAP[v_opp_best] + SCORE_OPPONENT_MAP[br_opp_best] + SCORE_OPPONENT_MAP[ur_opp_best]
+
+        post_score = 0
+        if y > 0:
+            game_data.grid[y*game_data.columns+x] = player
+            h_post_span = get_span(game_data, opponent, x, y-1, 1, 0)
+            h_post_best = get_best_span(game_data, h_post_span, opponent)
+            v_post_span = get_span(game_data, opponent, x, y-1, 0, 1)
+            v_post_best = get_best_span(game_data, v_post_span, opponent)
+            br_post_span = get_span(game_data, opponent, x, y-1, 1, 1)
+            br_post_best = get_best_span(game_data, br_post_span, opponent)
+            ur_post_span = get_span(game_data, opponent, x, y-1, 1, -1)
+            ur_post_best = get_best_span(game_data, ur_post_span, opponent)
+            
+            game_data.grid[y*game_data.columns+x] = 0
+
+            post_score = -1000000 if game_data.required_connections in [h_post_best, v_post_best, br_post_best, ur_post_best] else 0
+
+        scores[x] = my_score + opp_score + post_score
+        print((x,y, my_score, opp_score, post_score))
+        #print((h_span, h_best, h_opp_span, h_opp_best))  
+        #print((v_span, v_best, v_opp_span, v_opp_best))  
+        #print((br_span, br_best, br_opp_span, br_opp_best))  
+        #print((ur_span, ur_best, ur_opp_span, ur_opp_best))  
+        if game_data.required_connections in [h_best, v_best, br_best, ur_best]:
+            raise ValueError(f"Player {player} wins")
+
+    smack = ""
+
+    candidates = [i for i in range(len(y_pos)) if y_pos[i] != -1]
+    candidates.sort(key=lambda i: (scores[i], game_data.columns-abs((game_data.columns//2) - i)), reverse=True)
+    if not candidates:
+        raise ValueError("draw!!!")
+
+    result = candidates[0]
+    if scores[result] >= 200000:
+        smack = pick_smack_talk(game_data,DOUBLE_WIN)
+    elif scores[result] >= 100000:
+        if len(game_data.game_history) <= game_data.required_connections*2:
+            smack = pick_smack_talk(game_data,QUICK_LOSS)
+        elif ((scores[result] % 100000) >= 10000):
+            smack = pick_smack_talk(game_data,WIN_FROM_BEHIND)
+        elif len(game_data.game_history) <= game_data.required_connections*4:
+            smack = pick_smack_talk(game_data, EASY_LOSS)
+        else:
+            smack = pick_smack_talk(game_data, HARD_LOSS)
+    elif (len(game_data.game_history) == 1):
+        if game_data.game_history[0].selection == (game_data.columns // 2):
+            smack = pick_smack_talk(game_data, BORING_OPENING)
+        else:
+            smack = pick_smack_talk(game_data, WEIRD_OPENING)
+    elif (scores[result] % 100000) >= 10000:
+        smack = pick_smack_talk(game_data, OH_SHIT)
+    elif len(game_data.game_history) == 0:
+        smack = pick_smack_talk(game_data, START)
+    elif len(game_data.game_history) >= (game_data.columns * game_data.rows - 1):
+        smack = pick_smack_talk(game_data, DRAW)
+    elif (len(game_data.game_history) // 2) % 4 == 0:
+        smack = pick_smack_talk(game_data, STRATEGY_MSG).format(get_strategy_name(game_data))
+
+    return result, smack
